@@ -6,6 +6,7 @@
 require "socket"
 require "ipaddr"
 require "json"
+require "influxdb"
 
 MULTICAST_ADDR = "224.0.0.1"
 BIND_ADDR = "0.0.0.0"
@@ -47,6 +48,7 @@ socket.setsockopt(:IPPROTO_IP, :IP_MULTICAST_TTL, 1)
 socket.setsockopt(:SOL_SOCKET, :SO_REUSEPORT, 1)
 
 socket.bind(BIND_ADDR, PORT)
+client = InfluxDB::Client.new 'testing', host: 'grafana.internal.ddelnano.com'
 
 loop do
   m, _ = socket.recvfrom(2000)
@@ -60,6 +62,28 @@ loop do
     temprh = TempRH.new(record["temperature"] / 100.0, record["humidity"] / 100.0)
     rec = Combined.new(Time.now.utc, record["mac"], record["record_id"], aq, temprh)
 
+    tags = {
+      mac: record['mac'],
+    }
+    data = [
+      {
+        series: 'aqi',
+        tags: tags,
+        values: {
+          pm1_0: aq.pm1_0_standard,
+          pm2_5: aq.pm2_5_standard,
+        },
+      },
+      {
+        series: 'temperature',
+        tags: tags,
+        values: {
+          value: record['temperature'],
+        },
+
+      },
+    ]
+    client.write_points(data, 's')
     p rec
   end
 end
